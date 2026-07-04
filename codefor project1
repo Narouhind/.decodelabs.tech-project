@@ -1,0 +1,74 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "DHT.h"
+
+// --- Configuration ---
+#define DHTPIN 2          // Digital pin connected to the DHT sensor
+#define DHTTYPE DHT11     // Change to DHT22 if you are using that model
+
+// Initialize DHT sensor
+DHT dht(DHTPIN, DHTTYPE);
+
+// Initialize I2C LCD (Set the LCD address to 0x27 for a 16 chars and 2 line display)
+// Common addresses are 0x27 or 0x3F. If your screen is blank, run an I2C scanner sketch.
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+
+// --- Setup Loop ---
+void setup() {
+  // Initialize Serial Monitor for debugging
+  Serial.begin(11600);
+  Serial.println(F("Smart Environmental Monitor Initializing..."));
+
+  // Initialize DHT Sensor
+  dht.begin();
+
+  // Initialize LCD Screen
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("System Ready...");
+  delay(1000);
+  lcd.clear();
+}
+
+// --- Main Execution Loop ---
+void loop() {
+  // Wait 2 seconds between measurements (DHT sensors need time to read)
+  delay(2000);
+
+  // Reading temperature or humidity takes about 250 milliseconds!
+  float humidity = dht.readHumidity();
+  // Read temperature as Celsius (the default)
+  float temperature = dht.readTemperature();
+
+  // --- Error Checking ---
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    
+    lcd.setCursor(0, 0);
+    lcd.print("Sensor Error!   ");
+    return;
+  }
+
+  // --- Output to Serial Monitor ---
+  Serial.print(F("Humidity: "));
+  Serial.print(humidity);
+  Serial.print(F("%  |  Temperature: "));
+  Serial.print(temperature);
+  Serial.println(F("°C"));
+
+  // --- Output to I2C LCD ---
+  // Line 1: Temp: XX.XX C
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(temperature, 1); // Prints temp with 1 decimal place
+  lcd.print((char)223);      // Degree symbol character code
+  lcd.print("C        ");    // Extra spaces clear old characters
+
+  // Line 2: Humidity: XX.XX %
+  lcd.setCursor(0, 1);
+  lcd.print("Humidity: ");
+  lcd.print(humidity, 1);
+  lcd.print("%       ");
+}
