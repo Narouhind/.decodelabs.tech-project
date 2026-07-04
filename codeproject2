@@ -1,0 +1,61 @@
+// --- Configuration Constants ---
+const int MOISTURE_PIN = A0;  // Analog pin for sensor
+const int RELAY_PIN = 7;      // Digital pin for relay module
+
+// --- Threshold Settings ---
+// Adjust these values based on your specific soil and sensor calibration
+const int DRY_THRESHOLD = 700;   // Value above this means soil is too dry
+const int WET_THRESHOLD = 400;   // Value below this means soil is sufficiently wet
+
+// --- System Variables ---
+int currentMoisture = 0;
+bool isWatering = false;
+
+void setup() {
+  // Initialize Serial Monitor
+  Serial.begin(9600);
+  Serial.println(F("Automated Irrigation System Initializing..."));
+
+  // Configure Pins
+  pinMode(RELAY_PIN, OUTPUT);
+  
+  // Keep the relay OFF initially. 
+  // Note: Most Arduino relay modules are "Low Level Triggered", 
+  // meaning writing HIGH turns them OFF, and LOW turns them ON.
+  digitalWrite(RELAY_PIN, HIGH); 
+}
+
+void loop() {
+  // 1. Read the analog value from the sensor
+  currentMoisture = analogRead(MOISTURE_PIN);
+
+  // Print raw data for serial debugging and calibration
+  Serial.print(F("Raw Moisture Value: "));
+  Serial.print(currentMoisture);
+
+  // 2. Closed-Loop Threshold Logic (Hysteresis Control)
+  if (currentMoisture > DRY_THRESHOLD && !isWatering) {
+    // Soil is too dry, trigger the pump actuator
+    Serial.println(F(" -> [STATUS]: Soil is DRY. Activating Pump."));
+    digitalWrite(RELAY_PIN, LOW); // Turn relay ON
+    isWatering = true;
+  } 
+  else if (currentMoisture < WET_THRESHOLD && isWatering) {
+    // Soil is sufficiently hydrated, shut off the pump
+    Serial.println(F(" -> [STATUS]: Soil is WET. Deactivating Pump."));
+    digitalWrite(RELAY_PIN, HIGH); // Turn relay OFF
+    isWatering = false;
+  }
+  else {
+    // Maintain current state if inside the buffer zone
+    if (isWatering) {
+      Serial.println(F(" -> [STATUS]: Watering in progress..."));
+    } else {
+      Serial.println(F(" -> [STATUS]: Moisture level optimal."));
+    }
+  }
+
+  // 3. Execution Delay
+  // Check the system state every 1 second to avoid rapid switching (chattering)
+  delay(1000);
+}
