@@ -1,0 +1,92 @@
+// --- Pin Configurations ---
+const int PIR_PIN = 12;        // Interrupt pin
+const int LIGHT_LED = 14;     // Normal operation light
+const int SAFETY_LED = 27;    // Emergency flash light
+const int BUZZER_PIN = 26;    // Alarm actuator
+const int GAS_SENSOR = 34;    // Analog gas entry
+
+// --- Critical Thresholds ---
+const int GAS_THRESHOLD = 800; // Emergency limit for gas/smoke presence
+
+// --- Volatile Variables (Shared with ISRs) ---
+// Must be marked volatile so the CPU compiler knows its value can change instantly outside normal code flow
+volatile bool motionDetected = false;
+volatile unsigned long lastInterruptTime = 0;
+
+// --- Interrupt Service Routine (ISR) ---
+// This function runs INSTANTLY when the PIR pin detects a change
+void IRAM_ATTR handleMotion() {
+  unsigned long currentTime = millis();
+  // Software Debouncing: ignore interrupts that occur closer than 200ms apart
+  if (currentTime - lastInterruptTime > 200) {
+    motionDetected = true;
+    lastInterruptTime = currentTime;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Configure Inputs & Outputs
+  pinMode(PIR_PIN, INPUT_PULLDOWN); // Ensure stable LOW when no motion
+  pinMode(LIGHT_LED, OUTPUT);
+  pinMode(SAFETY_LED, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  // Attach the interrupt to the PIR pin
+  // RISING triggers when the signal moves from LOW to HIGH (motion starts)
+  attachInterrupt(digitalPinToInterrupt(PIR_PIN), handleMotion, RISING);
+
+  Serial.println("Edge Appliance Initialized. Monitoring safety status...");
+}
+
+void loop() {
+  // --- 1. PRIORITY 1: Safety Override Logic (Polling Critical Analog Hazard) ---
+  int gasLevel = analogRead(GAS_SENSOR);
+
+  if (gasLevel > GAS_THRESHOLD) {
+    // Clear motion flag to ignore household inputs during emergencies
+    motionDetected = false; 
+    
+    // Execute Immediate Emergency Action Block
+    executeSafetyOverride(gasLevel);
+    return; // Skip the rest of the loop entirely
+  }
+
+  // Ensure safety indicators are off if levels are normal
+  digitalWrite(SAFETY_LED, LOW);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // --- 2. PRIORITY 2: Standard Edge Execution (Asynchronous Input) ---
+  if (motionDetected) {
+    Serial.println("ISR Alert: Motion registered! Turning on smart lights.");
+    digitalWrite(LIGHT_LED, HIGH);
+    
+    // Reset our volatile flag variable
+    motionDetected = false; 
+    
+    // Keep lights on for a localized block without freezing background hardware safety steps
+    delay(5000); 
+    digitalWrite(LIGHT_LED, LOW);
+    Serial.println("Smart lights returning to standby mode.");
+  }
+}
+
+// --- Safety Actuator Control Routine ---
+void executeSafetyOverride(int hazardLevel) {
+  Serial.print("!!! EMERGENCY OVERRIDE !!! Gas Leak Detected: ");
+  Serial.println(hazardLevel);
+
+  // Shut down standard consumer lights immediately
+  digitalWrite(LIGHT_LED, LOW);
+
+  // Flash hazard lights and sound the buzzer at the edge level
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(SAFETY_LED, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(150);
+    digitalWrite(SAFETY_LED, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(150);
+  }
+}
