@@ -1,0 +1,87 @@
+// --- config.h ---
+#define IO_USERNAME  "YOUR_ADAFRUIT_IO_USERNAME"
+#define IO_KEY       "YOUR_ADAFRUIT_IO_KEY"
+
+#define WIFI_SSID    "YOUR_WIFI_NAME"
+#define WIFI_PASS    "YOUR_WIFI_PASSWORD"
+#include "config.h"
+#include <AdafruitIO_WiFi.h>
+
+// --- Hardware Pins ---
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 18;
+
+// --- Timing Configuration ---
+unsigned long lastUpdate = 0;
+const unsigned long telemetryInterval = 3000; // Publish data every 3 seconds
+
+// Initialize Adafruit IO WiFi client
+AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
+
+// Set up the cloud feed object
+AdafruitIO_Feed *distanceFeed = io.feed("intruder-distance");
+
+void setup() {
+  Serial.begin(115200);
+  while(!Serial); // Wait for Serial Monitor to open
+
+  // Configure HC-SR04 pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // Connect to Adafruit IO and Wi-Fi
+  Serial.print("Connecting to Adafruit IO");
+  io.connect();
+
+  // Wait for connection stability
+  while(io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println();
+  Serial.println(io.statusText());
+}
+
+void loop() {
+  // Essential function to keep the underlying MQTT connection alive with the cloud
+  io.run();
+
+  // Non-blocking timer: Publish telemetry data at the specified interval
+  if (millis() - lastUpdate >= telemetryInterval) {
+    lastUpdate = millis();
+
+    // 1. Calculate distance using the Ultrasonic Sensor
+    long duration;
+    float distanceCm;
+
+    // Clear the trigger pin
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    
+    // Set trigger HIGH for 10 microseconds to send out an acoustic pulse
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+
+    // Read the echo pin (returns wave travel time in microseconds)
+    duration = pulseIn(ECHO_PIN, HIGH);
+
+    // Calculate distance: Speed of sound is ~343 m/s or 0.0343 cm/uS.
+    // Divide by 2 because the sound wave travels to the object and back.
+    distanceCm = (duration * 0.0343) / 2;
+
+    // 2. Outlier and Error Handling
+    if (distanceCm >= 400 || distanceCm <= 2) {
+      Serial.println("Out of range or sensor error.");
+    } else {
+      // 3. Telemetry Stream Transmission
+      Serial.print("Current Intruder Distance: ");
+      Serial.print(distanceCm);
+      Serial.println(" cm");
+
+      // Broadcast telemetry packet via MQTT
+      distanceFeed->save(distanceCm);
+    }
+  }
+}
